@@ -506,7 +506,7 @@ fi
 # xz
 if needs_build "${tracker_file}" "xz"; then
     info "   -> Building xz..."
-    xz_url="${dep_cache}/${xz_file}"
+    xz_url="https://github.com/tukaani-project/xz/releases/download/v5.4.6/xz-5.4.6.tar.gz"
     curl -f -L -s -o xz.tar.gz "${xz_url}" ||
         error "xz download error encountered"
     tar -xzf xz.tar.gz || exit
