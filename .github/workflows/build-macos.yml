@@ -34,10 +34,10 @@ on:
         description: The shasum of the Vagrant RubyGem or commit
         required: true
         type: string
-    outputs:
-      dmg-cache-id:
-        description: Cache identifier for macOS universal dmg
-        value: ${{ jobs.info.outputs.dmg-unsigned-id }}
+    #outputs:
+    #  dmg-cache-id:
+    #    description: Cache identifier for macOS universal dmg
+    #    value: ${{ jobs.info.outputs.dmg-unsigned-id }}
 jobs:
   info:
     runs-on: ['ubuntu-latest']
