@@ -1,31 +1,31 @@
 name: Vagrant DMG Builder
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      vagrant-artifacts-name:
-        description: Name of upload containing Vagrant build artifacts
-        required: true
-        type: string
-      vagrant-artifacts-path:
-        description: Path used for Vagrant build artifacts
-        required: true
-        type: string
-      vagrant-gem-name:
-        description: Name of upload containing the Vagrant RubyGem
-        required: true
-        type: string
+      #vagrant-artifacts-name:
+        #description: Name of upload containing Vagrant build artifacts
+        #required: true
+        #type: string
+      #vagrant-artifacts-path:
+        #description: Path used for Vagrant build artifacts
+        #required: true
+        #type: string
+      #vagrant-gem-name:
+        #description: Name of upload containing the Vagrant RubyGem
+        #required: true
+        #type: string
       vagrant-gem-path:
         description: Path used for the Vagrant RubyGem (directory)
         required: true
         type: string
-      vagrant-licenses-name:
-        description: Name of upload containing the Vagrant licenses
-        required: true
-        type: string
-      vagrant-licenses-path:
-        description: Path used for the Vagrant licenses (directory)
-        required: true
-        type: string
+      #vagrant-licenses-name:
+      #  description: Name of upload containing the Vagrant licenses
+      #  required: true
+      #  type: string
+      #vagrant-licenses-path:
+      #  description: Path used for the Vagrant licenses (directory)
+      #  required: true
+      #  type: string
       vagrant-version:
         description: Version of Vagrant being built
         required: true
@@ -37,11 +37,10 @@ on:
     outputs:
       dmg-cache-id:
         description: Cache identifier for macOS universal dmg
-        value: ${{ jobs.info.outputs.dmg-signed-id }}
+        value: ${{ jobs.info.outputs.dmg-unsigned-id }}
 jobs:
   info:
-    if: github.repository == 'hashicorp/vagrant-builders'
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+    runs-on: ['ubuntu-latest']
     permissions:
       id-token: write
       contents: write
@@ -73,18 +72,18 @@ jobs:
       dmg-signed-id: ${{ steps.inspect.outputs.dmg-signed-id }}
       dmg-signed-exists: ${{ steps.inspect.outputs.dmg-signed-exists }}
     steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot vagrant_token;
+      #- name: Authentication
+      #  id: vault-auth
+      #  run: vault-auth
+      #- name: Secrets
+      #  id: secrets
+      #  uses: hashicorp/vault-action@v2
+      #  with:
+      #    url: ${{ steps.vault-auth.outputs.addr }}
+      #    caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+      #    token: ${{ steps.vault-auth.outputs.token }}
+      #    secrets:
+      #      kv/data/teams/vagrant/hashibot vagrant_token;
       - name: Code Checkout
         uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
         with:
@@ -96,7 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VAGRANT_SHASUM: ${{ inputs.vagrant-shasum }}
   build-arm-substrate:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-arm-unsigned-exists != 'true'
+    if: needs.info.outputs.substrate-arm-unsigned-exists != 'true'
     runs-on: macos-latest
     permissions:
       contents: write
@@ -130,7 +129,7 @@ jobs:
           CACHE_NAME: ${{ needs.info.outputs.substrate-arm-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   build-x86-substrate:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-x86-unsigned-exists != 'true'
+    if: needs.info.outputs.substrate-x86-unsigned-exists != 'true'
     runs-on: macos-latest
     permissions:
       contents: write
@@ -163,144 +162,144 @@ jobs:
         env:
           CACHE_NAME: ${{ needs.info.outputs.substrate-x86-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  sign-arm-substrate:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-arm-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, build-arm-substrate]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch substrate
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.substrate-arm-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign substrate
-        id: signer
-        run: ./.ci/auto-sign-zip ./artifacts/*.zip
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
-      - name: Store substrate
-        run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_SUBSTRATE}"
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.substrate-arm-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SIGNED_SUBSTRATE: ${{ steps.signer.outputs.signed-zip-artifact-path }}
-  sign-vagrant-go:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.core-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch Vagrant Artifacts
-        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-        with:
-          name: ${{ inputs.vagrant-artifacts-name }}
-          path: ${{ inputs.vagrant-artifacts-path }}
-      - name: Relocate Vagrant Go Binary
-        run: mkdir ./vagrant-go-signed && mv "${VAGRANT_ARTIFACTS}/vagrant-go_darwin_universal" ./vagrant-go-signed/vagrant-go
-        env:
-          VAGRANT_ARTIFACTS: ${{ inputs.vagrant-artifacts-path }}
-      - name: Sign Vagrant Go Binary
-        run: ./.ci/sign-file -b vagrant-go ./vagrant-go-signed/vagrant-go
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
-      - name: Store Vagrant Go Binary
-        uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
-        with:
-          name: vagrant-go
-          path: ./vagrant-go-signed
-  sign-x86-substrate:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-x86-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, build-x86-substrate]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch substrate
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.substrate-x86-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign substrate
-        id: signer
-        run: ./.ci/auto-sign-zip ./artifacts/*.zip
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
-      - name: Store substrate
-        run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_SUBSTRATE}"
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.substrate-x86-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SIGNED_SUBSTRATE: ${{ steps.signer.outputs.signed-zip-artifact-path }}
+  #sign-arm-substrate:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-arm-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, build-arm-substrate]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch substrate
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.substrate-arm-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign substrate
+  #      id: signer
+  #      run: ./.ci/auto-sign-zip ./artifacts/*.zip
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
+  #    - name: Store substrate
+  #      run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_SUBSTRATE}"
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.substrate-arm-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #        SIGNED_SUBSTRATE: ${{ steps.signer.outputs.signed-zip-artifact-path }}
+  #sign-vagrant-go:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.core-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch Vagrant Artifacts
+  #      uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+  #      with:
+  #        name: ${{ inputs.vagrant-artifacts-name }}
+  #        path: ${{ inputs.vagrant-artifacts-path }}
+  #    - name: Relocate Vagrant Go Binary
+  #      run: mkdir ./vagrant-go-signed && mv "${VAGRANT_ARTIFACTS}/vagrant-go_darwin_universal" ./vagrant-go-signed/vagrant-go
+  #      env:
+  #        VAGRANT_ARTIFACTS: ${{ inputs.vagrant-artifacts-path }}
+  #    - name: Sign Vagrant Go Binary
+  #      run: ./.ci/sign-file -b vagrant-go ./vagrant-go-signed/vagrant-go
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
+  #    - name: Store Vagrant Go Binary
+  #      uses: actions/upload-artifact@0b7f8abb1508181956e8e162db84b466c27e18ce # v3.1.2
+  #      with:
+  #        name: vagrant-go
+  #        path: ./vagrant-go-signed
+  #sign-x86-substrate:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-x86-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, build-x86-substrate]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch substrate
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.substrate-x86-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign substrate
+  #      id: signer
+  #      run: ./.ci/auto-sign-zip ./artifacts/*.zip
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
+  #    - name: Store substrate
+  #      run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_SUBSTRATE}"
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.substrate-x86-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #        SIGNED_SUBSTRATE: ${{ steps.signer.outputs.signed-zip-artifact-path }}
   combine-substrates:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.substrate-universal-exists != 'true' && !cancelled() && !failure()
+    if: needs.info.outputs.substrate-universal-exists != 'true' && !cancelled() && !failure()
     runs-on: ubuntu-latest
-    needs: [info, sign-arm-substrate, sign-x86-substrate]
+    needs: [info, build-arm-substrate, build-x86-substrate]
     permissions:
       contents: write
     steps:
@@ -309,13 +308,13 @@ jobs:
       - name: Fetch arm substrate
         run: ./.ci/restore-cache "${CACHE_NAME}" ./substrates
         env:
-          CACHE_NAME: ${{ needs.info.outputs.substrate-arm-signed-id }}
+          CACHE_NAME: ${{ needs.info.outputs.substrate-arm-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Fetch x86 substrate
         run: ./.ci/restore-cache "${CACHE_NAME}" ./substrates
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CACHE_NAME: ${{ needs.info.outputs.substrate-x86-signed-id }}
+          CACHE_NAME: ${{ needs.info.outputs.substrate-x86-unsigned-id }}
       - name: Smash the substrates
         id: combiner
         run: ./.ci/macos-substrate-combiner ./substrates
@@ -326,7 +325,7 @@ jobs:
           CACHE_NAME: ${{ needs.info.outputs.substrate-universal-id }}
           COMBINED_SUBSTRATE: ${{ steps.combiner.outputs.universal-substrate-path }}
   install-vagrant:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.gems-unsigned-exists != 'true' && !cancelled() && !failure()
+    if: needs.info.outputs.gems-unsigned-exists != 'true' && !cancelled() && !failure()
     runs-on: macos-latest
     needs: [info, combine-substrates]
     permissions:
@@ -341,11 +340,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CACHE_NAME: ${{ needs.info.outputs.substrate-universal-id }}
-      - name: Fetch Vagrant RubyGem
-        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-        with:
-          name: ${{ inputs.vagrant-gem-name }}
-          path: ${{ inputs.vagrant-gem-path }}
+      #- name: Fetch Vagrant RubyGem
+        #uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+        #with:
+          #name: ${{ inputs.vagrant-gem-name }}
+          #path: ${{ inputs.vagrant-gem-path }}
       - name: Install Vagrant
         run: ./package/darwin/generate_package_contents ./universal-substrate/substrate_darwin_universal.zip "${VAGRANT_GEM_PATH}/vagrant.gem"
         env:
@@ -355,54 +354,54 @@ jobs:
         env:
           CACHE_NAME: ${{ needs.info.outputs.gems-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  sign-vagrant-install:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.gems-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, install-vagrant]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch Vagrant install
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.gems-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign Vagrant install
-        id: signer
-        run: ./.ci/auto-sign-zip ./artifacts/*.zip
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
-      - name: Store Vagrant install
-        run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_INSTALL}"
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.gems-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SIGNED_INSTALL: ${{ steps.signer.outputs.signed-zip-artifact-path }}
+  #sign-vagrant-install:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.gems-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, install-vagrant]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch Vagrant install
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.gems-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign Vagrant install
+  #      id: signer
+  #      run: ./.ci/auto-sign-zip ./artifacts/*.zip
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
+  #    - name: Store Vagrant install
+  #      run: ./.ci/create-cache "${CACHE_NAME}" "${SIGNED_INSTALL}"
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.gems-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #        SIGNED_INSTALL: ${{ steps.signer.outputs.signed-zip-artifact-path }}
   core-pkg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.core-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
+    if: needs.info.outputs.core-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
     runs-on: macos-latest
-    needs: [info, sign-vagrant-install, sign-vagrant-go]
+    needs: [info, install-vagrant]
     permissions:
       contents: write
     steps:
@@ -418,15 +417,15 @@ jobs:
       - name: Fetch Vagrant install
         run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
         env:
-          CACHE_NAME: ${{ needs.info.outputs.gems-signed-id }}
+          CACHE_NAME: ${{ needs.info.outputs.gems-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fetch Vagrant Go Binary
-        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-        with:
-          name: vagrant-go
-          path: ./vagrant-go-signed
+      #- name: Fetch Vagrant Go Binary
+        #uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+        #with:
+          #name: vagrant-go
+          #path: ./vagrant-go-signed
       - name: Build core package
-        run: ./package/darwin/build_core_pkg ./artifacts/substrate_darwin_universal.zip ./artifacts/vagrant-package-contents.zip ./vagrant-go-signed/vagrant-go "${VAGRANT_VERSION}"
+        run: ./package/darwin/build_core_pkg ./artifacts/substrate_darwin_universal.zip ./artifacts/vagrant-package-contents.zip ./binaries/vagrant-go "${VAGRANT_VERSION}"
         env:
           VAGRANT_VERSION: ${{ inputs.vagrant-version }}
       - name: Store core package
@@ -434,52 +433,52 @@ jobs:
         env:
           CACHE_NAME: ${{ needs.info.outputs.core-pkg-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  sign-core-pkg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.core-pkg-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, core-pkg]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_installer_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch core.pkg
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.core-pkg-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign core package
-        run: ./.ci/sign-file ./artifacts/core.pkg
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_installer_signer }}
-      - name: Store core package
-        run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts/core.pkg
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.core-pkg-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #sign-core-pkg:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.core-pkg-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, core-pkg]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_installer_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch core.pkg
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.core-pkg-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign core package
+  #      run: ./.ci/sign-file ./artifacts/core.pkg
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_installer_signer }}
+  #    - name: Store core package
+  #      run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts/core.pkg
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.core-pkg-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   install-pkg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.installer-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
+    if: needs.info.outputs.installer-pkg-unsigned-exists != 'true' && !cancelled() && !failure()
     runs-on: macos-latest
-    needs: [info, sign-core-pkg]
+    needs: [info, core-pkg]
     permissions:
       contents: write
     steps:
@@ -490,17 +489,15 @@ jobs:
       - name: Fetch core.pkg
         run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
         env:
-          CACHE_NAME: ${{ needs.info.outputs.core-pkg-signed-id }}
+          CACHE_NAME: ${{ needs.info.outputs.core-pkg-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fetch Licenses
-        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
-        with:
-          name: ${{ inputs.vagrant-licenses-name }}
-          path: ${{ inputs.vagrant-licenses-path }}
+      #- name: Fetch Licenses
+        #uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+        #with:
+          #name: ${{ inputs.vagrant-licenses-name }}
+          #path: ${{ inputs.vagrant-licenses-path }}
       - name: Install License for Build
-        run: mv "${LICENSE_DIR}/LICENSE.html" ./package/support/darwin/dist/license.html
-        env:
-          LICENSE_DIR: ${{ inputs.vagrant-licenses-path }}
+        run: mv "LICENSE.html" ./package/support/darwin/dist/license.html
       - name: Build installer package
         run: ./package/darwin/build_vagrant_pkg ./artifacts/core.pkg
       - name: Store install package
@@ -508,52 +505,52 @@ jobs:
         env:
           CACHE_NAME: ${{ needs.info.outputs.installer-pkg-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  sign-installer-pkg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.installer-pkg-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, install-pkg]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_installer_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch installer package
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.installer-pkg-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign installer package
-        run: ./.ci/sign-file ./artifacts/Vagrant.pkg
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_installer_signer }}
-      - name: Store installer package
-        run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts/Vagrant.pkg
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.installer-pkg-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #sign-installer-pkg:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.installer-pkg-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, install-pkg]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_installer_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch installer package
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.installer-pkg-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign installer package
+  #      run: ./.ci/sign-file ./artifacts/Vagrant.pkg
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_installer_signer }}
+  #    - name: Store installer package
+  #      run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts/Vagrant.pkg
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.installer-pkg-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   install-dmg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.dmg-unsigned-exists != 'true' && !cancelled() && !failure()
+    if: needs.info.outputs.dmg-unsigned-exists != 'true' && !cancelled() && !failure()
     runs-on: macos-latest
-    needs: [info, sign-installer-pkg]
+    needs: [info, install-pkg]
     permissions:
       contents: write
     steps:
@@ -566,7 +563,7 @@ jobs:
       - name: Fetch Vagrant installer
         run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
         env:
-          CACHE_NAME: ${{ needs.info.outputs.installer-pkg-signed-id }}
+          CACHE_NAME: ${{ needs.info.outputs.installer-pkg-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build installer DMG
         run: ./package/darwin/build_vagrant_dmg ./artifacts/Vagrant.pkg "${VERSION}"
@@ -577,50 +574,50 @@ jobs:
         env:
           CACHE_NAME: ${{ needs.info.outputs.dmg-unsigned-id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  sign-installer-dmg:
-    if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.dmg-signed-exists != 'true' && !cancelled() && !failure()
-    runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
-    needs: [info, install-dmg]
-    permissions:
-      id-token: write
-      contents: write
-    steps:
-      - name: Authentication
-        id: vault-auth
-        run: vault-auth
-      - name: Secrets
-        id: secrets
-        uses: hashicorp/vault-action@v2
-        with:
-          url: ${{ steps.vault-auth.outputs.addr }}
-          caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
-          token: ${{ steps.vault-auth.outputs.token }}
-          secrets:
-            kv/data/teams/vagrant/hashibot signore_token;
-            kv/data/github/hashicorp/vagrant-builders notarization_key_encoded;
-            kv/data/github/hashicorp/vagrant-builders signore_client_id;
-            kv/data/github/hashicorp/vagrant-builders signore_client_secret;
-            kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
-      - name: Code Checkout
-        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
-      - name: Fetch installer dmg
-        run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.dmg-unsigned-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Sign installer package
-        run: ./.ci/sign-file ./artifacts/*.dmg
-        env:
-          HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
-          SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
-          SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
-          SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
-      - name: Notarize Installer Package
-        run: ./.ci/notarize-file ./artifacts/*.dmg
-        env:
-          NOTARIZE_KEY: ${{ steps.secrets.outputs.notarization_key_encoded }}
-      - name: Store installer package
-        run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts
-        env:
-          CACHE_NAME: ${{ needs.info.outputs.dmg-signed-id }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #sign-installer-dmg:
+  #  if: github.repository == 'hashicorp/vagrant-builders' && needs.info.outputs.dmg-signed-exists != 'true' && !cancelled() && !failure()
+  #  runs-on: ['self-hosted', 'ondemand', 'linux', 'type=t3.small']
+  #  needs: [info, install-dmg]
+  #  permissions:
+  #    id-token: write
+  #    contents: write
+  #  steps:
+  #    - name: Authentication
+  #      id: vault-auth
+  #      run: vault-auth
+  #    - name: Secrets
+  #      id: secrets
+  #      uses: hashicorp/vault-action@v2
+  #      with:
+  #        url: ${{ steps.vault-auth.outputs.addr }}
+  #        caCertificate: ${{ steps.vault-auth.outputs.ca_certificate }}
+  #        token: ${{ steps.vault-auth.outputs.token }}
+  #        secrets:
+  #          kv/data/teams/vagrant/hashibot signore_token;
+  #          kv/data/github/hashicorp/vagrant-builders notarization_key_encoded;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_id;
+  #          kv/data/github/hashicorp/vagrant-builders signore_client_secret;
+  #          kv/data/github/hashicorp/vagrant-builders signore_macos_binary_signer;
+  #    - name: Code Checkout
+  #      uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+  #    - name: Fetch installer dmg
+  #      run: ./.ci/restore-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.dmg-unsigned-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #    - name: Sign installer package
+  #      run: ./.ci/sign-file ./artifacts/*.dmg
+  #      env:
+  #        HASHIBOT_TOKEN: ${{ steps.secrets.outputs.signore_token }}
+  #        SIGNORE_CLIENT_ID: ${{ steps.secrets.outputs.signore_client_id }}
+  #        SIGNORE_CLIENT_SECRET: ${{ steps.secrets.outputs.signore_client_SECRET }}
+  #        SIGNORE_SIGNER: ${{ steps.secrets.outputs.signore_macos_binary_signer }}
+  #    - name: Notarize Installer Package
+  #      run: ./.ci/notarize-file ./artifacts/*.dmg
+  #      env:
+  #        NOTARIZE_KEY: ${{ steps.secrets.outputs.notarization_key_encoded }}
+  #    - name: Store installer package
+  #      run: ./.ci/create-cache "${CACHE_NAME}" ./artifacts
+  #      env:
+  #        CACHE_NAME: ${{ needs.info.outputs.dmg-signed-id }}
+  #        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
