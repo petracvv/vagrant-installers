@@ -118,6 +118,7 @@ info "Installing Vagrant RubyGem..."
 #       flags
 export RCD_HOST_RUBY_VERSION=1
 gem install --platform ruby "${vagrant_gem}" || exit
+gem install --platform ruby "nokogiri" || exit
 
 # Remove intermediate files from grpc extension
 rm -rf "${embed_gemsdir}/gems/grpc-"*/src/ruby/ext/grpc/libs
